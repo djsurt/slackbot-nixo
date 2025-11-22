@@ -6,6 +6,8 @@ nixoenv/
 # C extensions
 *.so
 
+*.db
+
 # Distribution / packaging
 .Python
 build/
