@@ -9,7 +9,7 @@ CATEGORIES = ["bug", "feature", "support", "question", "irrelevant"]
 def classify_message(msg_text: str):
     """Return (category, relevance_score) tuple."""
     prompt = f"""
-    Classify this Slack message into one of the following categories:
+    Classify this Slack message into one of the following categories for a Forward Deployed Engineer:
     {', '.join(CATEGORIES)}.
 
     Message: "{msg_text}"

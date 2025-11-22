@@ -3,6 +3,26 @@ from utils import classify_message
 from models import Ticket
 from database import SessionLocal, engine, Base
 app = FastAPI()
+from embeddings import get_embedding, cosine_similarity
+import uuid
+
+#TODO: People might be talking about the same issue in a different channel too.
+def assign_group(db, new_text, new_embedding, channel, thread_ts=None):
+    # 1️⃣ Same thread → same group
+    if thread_ts:
+        return thread_ts
+
+    # 2️⃣ Compare to existing tickets in the same channel
+    tickets = db.query(Ticket).filter(Ticket.channel == channel).all()
+    threshold = 0.7
+    for t in tickets:
+        if not t.embedding:
+            continue
+        sim = cosine_similarity(new_embedding, t.embedding)
+        if sim > threshold:
+            return t.group_id  # Same issue
+    # 3️⃣ Otherwise, make new group
+    return str(uuid.uuid4())
 
 Base.metadata.create_all(bind=engine)
 @app.post("/slack/events")
@@ -18,20 +38,27 @@ async def slack_events(request: Request):
     event = body.get("event", {})
     text = event.get("text", "")
     channel = event.get("channel", "")
-    
     category, score = classify_message(text)
     print(f"\n\n\n\nClassified message as {category} with score {score}")
     if category != "irrelevant":
         db = SessionLocal()
+        embedding = get_embedding(text)
+        print(f"\n\n\nGenerated embedding of length {len(embedding)}")
+        group_id = assign_group(db, text, embedding, channel, event.get("thread_ts"))
         ticket = Ticket(
             text=text,
             channel=channel,
             type=category,
             relevance_score=score,
+            group_id=group_id,
+            embedding=embedding
         )
         try:
             db.add(ticket)
             db.commit()
+        except Exception as e:
+            print(f"Error saving ticket: {e}")
+            db.rollback()
         finally:
             db.close()
     return {"ok": True}
