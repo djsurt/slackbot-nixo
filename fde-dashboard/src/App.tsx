@@ -1,4 +1,3 @@
-// src/App.tsx
 import { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 
@@ -60,11 +59,8 @@ export default function App() {
 
   const toggleGroup = (groupId: string) => {
     const newExpanded = new Set(expandedGroups);
-    if (newExpanded.has(groupId)) {
-      newExpanded.delete(groupId);
-    } else {
-      newExpanded.add(groupId);
-    }
+    if (newExpanded.has(groupId)) newExpanded.delete(groupId);
+    else newExpanded.add(groupId);
     setExpandedGroups(newExpanded);
   };
 
@@ -99,23 +95,80 @@ export default function App() {
       <div className="max-w-7xl mx-auto px-6 py-8">
         {sortedGroups.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-gray-500">No issues yet — waiting for messages from Slack...</p>
+            <p className="text-gray-500">
+              No issues yet — waiting for messages from Slack...
+            </p>
           </div>
         ) : (
-          <div className="border border-gray-200 rounded-lg overflow-hidden">
+          <div className="border border-gray-300 rounded-xl overflow-hidden divide-y-4 divide-gray-300">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="text-left px-6 py-3 text-sm font-semibold text-gray-700">Issue</th>
-                  <th className="text-left px-6 py-3 text-sm font-semibold text-gray-700">Messages</th>
-                  <th className="text-left px-6 py-3 text-sm font-semibold text-gray-700">Updated</th>
+                <tr className="border-b-2 border-gray-300 bg-gray-50">
+                  <th className="text-left px-6 py-3 text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                    Issue
+                  </th>
+                  <th className="text-left px-6 py-3 text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                    Messages
+                  </th>
+                  <th className="text-left px-6 py-3 text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                    Updated
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {sortedGroups.map(([groupId, msgs]) => {
-                  const firstText = msgs[0].text.length > 60
-                    ? msgs[0].text.slice(0, 60) + "..."
-                    : msgs[0].text;
+                  const firstMsgRaw = msgs[0].text;
+                  const words = firstMsgRaw
+                    .replace(/[^\w\s]/g, "")
+                    .split(/\s+/)
+                    .filter(Boolean);
+
+                  const stopwords = new Set([
+                    "oh", "ohh", "hmm", "huh", "okay", "ok", "yeah", "yup", "nope", "alright",
+                    "right", "sure", "hi", "hello", "thanks", "thank", "please", "cool", "great",
+                    "awesome", "nice", "well", "anyway", "hmm", "huh", "hmm", "yep", "no",
+                    "the", "a", "an", "is", "are", "was", "were", "be", "been", "to", "for",
+                    "on", "in", "of", "and", "or", "with", "we", "you", "i", "it", "need",
+                    "some", "help", "can", "should", "could", "would", "also", "just",
+                    "want", "like", "there", "this", "that", "again", "doesnt", "not",
+                    "from", "about", "have", "has", "had", "get", "got", "do", "did", "does"
+                  ]);
+
+                  const filtered = words.filter(
+                    (w) => w.length > 3 && !stopwords.has(w.toLowerCase())
+                  );
+
+                  if (filtered[0] && stopwords.has(filtered[0].toLowerCase())) filtered.shift();
+
+                  const technicalKeywords = filtered.filter((w) =>
+                    /(api|login|backend|frontend|server|infra|infrastructure|database|export|timeout|crash|error|feature|support|deploy|button|mobile|auth|endpoint|integration|performance|latency|pipeline|cloud|aws|gcp|azure)/i.test(w)
+                  );
+
+                  const businessKeywords = filtered.filter((w) =>
+                    /(procurement|finance|invoice|vendor|compliance|sales|operations|payment|contract|report|approval|audit|budget|inventory|crm|erp|hr|human|resources|supply|chain|customer|billing|data|policy|dashboard|security|governance|accounting|marketing|analytics|legal)/i.test(
+                      w
+                    )
+                  );
+
+                  const properNouns = words.filter(
+                    (w) => /^[A-Z]/.test(w) && !stopwords.has(w.toLowerCase())
+                  );
+
+                  const combined = Array.from(
+                    new Set([...properNouns, ...businessKeywords, ...technicalKeywords])
+                  );
+
+                  let issueTitle = "";
+                  if (combined.length > 0) {
+                    issueTitle = combined.slice(0, 4).join(" ");
+                  } else if (filtered.length > 0) {
+                    issueTitle = filtered.slice(0, 3).join(" ");
+                  } else {
+                    issueTitle = firstMsgRaw.slice(0, 60);
+                  }
+
+                  issueTitle =
+                    issueTitle.charAt(0).toUpperCase() + issueTitle.slice(1);
 
                   const groupTime = formatDate(msgs[msgs.length - 1].ts);
                   const isExpanded = expandedGroups.has(groupId);
@@ -124,29 +177,48 @@ export default function App() {
                     <>
                       <tr
                         key={groupId}
-                        className="border-b border-gray-200 hover:bg-gray-50 cursor-pointer transition-colors"
+                        className="border-t-4 border-gray-300 hover:bg-gray-100 cursor-pointer transition-colors"
                         onClick={() => toggleGroup(groupId)}
                       >
-                        <td className="px-6 py-4 text-sm text-gray-900">{firstText}</td>
+                        <td className="px-6 py-4 text-base text-gray-900 font-bold tracking-wide">
+                          {issueTitle || "General inquiry"}
+                          <p className="text-xs text-gray-500 truncate mt-1 italic">
+                            “{msgs[0].text.slice(0, 60)}...”
+                          </p>
+                        </td>
                         <td className="px-6 py-4 text-sm text-gray-600">{msgs.length}</td>
                         <td className="px-6 py-4 text-sm text-gray-600">{groupTime}</td>
                       </tr>
+
                       {isExpanded && (
-                        <tr className="bg-gray-50">
-                          <td colSpan={3} className="px-6 py-4">
-                            <div className="space-y-3">
-                              <div className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-3">
+                        <tr className="bg-gray-50 animate-fadeIn">
+                          <td colSpan={3} className="px-6 py-5">
+                            <div className="space-y-4">
+                              <h3 className="text-sm font-semibold text-blue-600 mb-2">
+                                Issue context: {issueTitle}
+                              </h3>
+                              <div className="border-l-4 border-blue-200 pl-4 text-gray-600 text-sm italic">
+                                "{msgs[0].text}"
+                              </div>
+
+                              <div className="text-xs font-semibold text-gray-700 uppercase tracking-wider mt-4">
                                 Messages
                               </div>
+
                               {msgs.map((m, idx) => (
-                                <div key={m.id} className="bg-white border border-gray-200 rounded p-4">
+                                <div
+                                  key={m.id}
+                                  className="bg-white border-2 border-gray-400 rounded-xl p-4 shadow-md hover:shadow-lg transition-shadow"
+                                >
                                   <div className="flex justify-between items-start gap-3 mb-2">
-                                    <span className="text-xs font-semibold text-gray-500 uppercase">
+                                    <span className="text-xs font-semibold text-gray-600 uppercase">
                                       Message {idx + 1}
                                     </span>
-                                    <span className="text-xs text-gray-500">{formatDate(m.ts)}</span>
+                                    <span className="text-xs text-gray-500">
+                                      {formatDate(m.ts)}
+                                    </span>
                                   </div>
-                                  <p className="text-sm text-gray-700 mb-2">{m.text}</p>
+                                  <p className="text-sm text-gray-800 mb-2">{m.text}</p>
                                   <div className="flex items-center gap-2">
                                     <span className="text-xs text-gray-500">Channel:</span>
                                     <code className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-700">
