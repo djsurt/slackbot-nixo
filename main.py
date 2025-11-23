@@ -2,34 +2,48 @@ from fastapi import FastAPI, Request
 from utils import classify_message
 from models import Ticket
 from database import SessionLocal, engine, Base
-app = FastAPI()
+from datetime import datetime, timedelta
 from embeddings import get_embedding, cosine_similarity
 from supabase import create_client
 import os
 from dotenv import load_dotenv
 import uuid
 load_dotenv()
-
+app = FastAPI()
 # Store processed event IDs to prevent duplicates
 processed_events = set()
 
 #TODO: People might be talking about the same issue in a different channel too.
-def assign_group(db, new_text, new_embedding, channel, thread_ts=None):
+def assign_group(db, new_text, new_embedding, ts, thread_ts=None):
     # 1️⃣ Same thread → same group
     if thread_ts:
         parent_ticket = db.query(Ticket).filter(Ticket.ts == thread_ts).first()
         if parent_ticket:
             return parent_ticket.group_id
 
-    # 2️⃣ Compare to existing tickets in the same channel
-    tickets = db.query(Ticket).filter(Ticket.channel == channel).all()
-    threshold = 0.7
+    # 2️⃣ Compare with all tickets (cross-channel)
+    tickets = db.query(Ticket).all()
+    strong_similarity = 0.7
+    weak_similarity = 0.5
+    time_threshold = timedelta(minutes=15)
+
+    best_match = None
+    best_score = 0
+
     for t in tickets:
         if not t.embedding:
             continue
         sim = cosine_similarity(new_embedding, t.embedding)
-        if sim > threshold:
-            return t.group_id  # Same issue
+        time_diff = abs((ts - t.ts).total_seconds())
+        # Word similarity
+        if sim >= strong_similarity and sim > best_score:
+            best_match, best_score = t, sim
+        # Time based similarity
+        elif sim >= weak_similarity and time_diff < time_threshold.total_seconds() and sim > best_score:
+            best_match, best_score = t, sim
+    
+    if best_match:
+        return best_match.group_id
     # 3️⃣ Otherwise, make new group
     return str(uuid.uuid4())
 
@@ -64,6 +78,8 @@ async def slack_events(request: Request):
     # Example: print only message events
     event = body.get("event", {})
     text = event.get("text", "")
+    ts_str = event.get("ts", "")
+    ts = datetime.fromtimestamp(float(ts_str)) if ts_str else datetime.utcnow()
     channel = event.get("channel", "")
     category, score = classify_message(text)
     print(f"\n\n\n\nClassified message as {category} with score {score}")
@@ -71,14 +87,15 @@ async def slack_events(request: Request):
         db = SessionLocal()
         embedding = get_embedding(text)
         print(f"\n\n\nGenerated embedding of length {len(embedding)}")
-        group_id = assign_group(db, text, embedding, channel, event.get("thread_ts"))
+        group_id = assign_group(db, text, embedding, ts, event.get("thread_ts"))
         ticket = Ticket(
             text=text,
             channel=channel,
             type=category,
             relevance_score=score,
             group_id=group_id,
-            embedding=embedding
+            embedding=embedding,
+            ts=ts
         )
         try:
             db.add(ticket)
