@@ -14,6 +14,7 @@ interface Ticket {
 
 export default function App() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchTickets();
@@ -42,7 +43,6 @@ export default function App() {
     if (data) setTickets(data as Ticket[]);
   };
 
-  // ✅ Group tickets by group_id
   const groups: Record<string, Ticket[]> = tickets.reduce(
     (acc: Record<string, Ticket[]>, t: Ticket) => {
       if (!acc[t.group_id]) acc[t.group_id] = [];
@@ -52,63 +52,120 @@ export default function App() {
     {}
   );
 
-  // ✅ Sort groups by latest message time (optional)
   const sortedGroups = Object.entries(groups).sort((a, b) => {
     const latestA = new Date(a[1][a[1].length - 1].ts || "").getTime();
     const latestB = new Date(b[1][b[1].length - 1].ts || "").getTime();
     return latestB - latestA;
   });
 
+  const toggleGroup = (groupId: string) => {
+    const newExpanded = new Set(expandedGroups);
+    if (newExpanded.has(groupId)) {
+      newExpanded.delete(groupId);
+    } else {
+      newExpanded.add(groupId);
+    }
+    setExpandedGroups(newExpanded);
+  };
+
+  const formatDate = (ts?: string) => {
+    if (!ts) return "N/A";
+    const date = new Date(ts);
+    return date.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
+
   return (
-    <div className="p-8 bg-gray-50 min-h-screen">
-      <h1 className="text-3xl font-bold mb-6 text-gray-800">
-        FDE Slackbot Dashboard
-      </h1>
-
-      {sortedGroups.length === 0 && (
-        <p className="text-gray-500">No tickets yet — waiting for messages...</p>
-      )}
-
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {sortedGroups.map(([groupId, msgs]) => {
-          // Use first message’s text as title (truncate if long)
-          const firstText = msgs[0].text.length > 60
-            ? msgs[0].text.slice(0, 60) + "..."
-            : msgs[0].text;
-
-          const latestType = msgs[msgs.length - 1].type;
-          const groupTime = msgs[msgs.length - 1].ts
-            ? new Date(msgs[msgs.length - 1].ts!).toLocaleString()
-            : "";
-
-          return (
-            <div
-              key={groupId}
-              className="bg-white shadow-md rounded-2xl p-5 border border-gray-100 hover:shadow-lg transition-shadow duration-200"
-            >
-              <div className="flex justify-between items-center mb-2">
-                <h2 className="font-semibold text-lg text-gray-800">
-                  🧩 {firstText}
-                </h2>
-                <span className="text-sm text-gray-500">{latestType}</span>
-              </div>
-
-              <p className="text-xs text-gray-400 mb-3">Updated: {groupTime}</p>
-
-              <ul className="space-y-1 max-h-40 overflow-y-auto pr-1">
-                {msgs.map((m) => (
-                  <li key={m.id} className="text-gray-700 text-sm">
-                    • {m.text}
-                  </li>
-                ))}
-              </ul>
-
-              <p className="mt-2 text-xs text-gray-400">
-                Group ID: {groupId.slice(0, 8)}…
-              </p>
+    <div className="min-h-screen bg-white">
+      {/* Header */}
+      <div className="border-b border-gray-200 sticky top-0 z-50 bg-white">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-semibold text-gray-900">FDE Slackbot</h1>
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span>{sortedGroups.length} Issues</span>
             </div>
-          );
-        })}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        {sortedGroups.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-gray-500">No issues yet — waiting for messages from Slack...</p>
+          </div>
+        ) : (
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-200 bg-gray-50">
+                  <th className="text-left px-6 py-3 text-sm font-semibold text-gray-700">Issue</th>
+                  <th className="text-left px-6 py-3 text-sm font-semibold text-gray-700">Messages</th>
+                  <th className="text-left px-6 py-3 text-sm font-semibold text-gray-700">Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedGroups.map(([groupId, msgs]) => {
+                  const firstText = msgs[0].text.length > 60
+                    ? msgs[0].text.slice(0, 60) + "..."
+                    : msgs[0].text;
+
+                  const groupTime = formatDate(msgs[msgs.length - 1].ts);
+                  const isExpanded = expandedGroups.has(groupId);
+
+                  return (
+                    <>
+                      <tr
+                        key={groupId}
+                        className="border-b border-gray-200 hover:bg-gray-50 cursor-pointer transition-colors"
+                        onClick={() => toggleGroup(groupId)}
+                      >
+                        <td className="px-6 py-4 text-sm text-gray-900">{firstText}</td>
+                        <td className="px-6 py-4 text-sm text-gray-600">{msgs.length}</td>
+                        <td className="px-6 py-4 text-sm text-gray-600">{groupTime}</td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="bg-gray-50">
+                          <td colSpan={3} className="px-6 py-4">
+                            <div className="space-y-3">
+                              <div className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-3">
+                                Messages
+                              </div>
+                              {msgs.map((m, idx) => (
+                                <div key={m.id} className="bg-white border border-gray-200 rounded p-4">
+                                  <div className="flex justify-between items-start gap-3 mb-2">
+                                    <span className="text-xs font-semibold text-gray-500 uppercase">
+                                      Message {idx + 1}
+                                    </span>
+                                    <span className="text-xs text-gray-500">{formatDate(m.ts)}</span>
+                                  </div>
+                                  <p className="text-sm text-gray-700 mb-2">{m.text}</p>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-gray-500">Channel:</span>
+                                    <code className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-700">
+                                      {m.channel}
+                                    </code>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
