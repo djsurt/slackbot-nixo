@@ -35,7 +35,8 @@ processed_events = set()
 def assign_group(db, new_text, new_embedding, ts, thread_ts=None):
     # 1️⃣ Same thread → same group
     if thread_ts:
-        parent_ticket = db.query(Ticket).filter(Ticket.ts == thread_ts).first()
+        thread_dt = datetime.fromtimestamp(float(thread_ts))
+        parent_ticket = db.query(Ticket).filter(Ticket.ts == thread_dt).first()
         if parent_ticket:
             return parent_ticket.group_id
 
