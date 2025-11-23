@@ -10,11 +10,16 @@ from dotenv import load_dotenv
 import uuid
 load_dotenv()
 
+# Store processed event IDs to prevent duplicates
+processed_events = set()
+
 #TODO: People might be talking about the same issue in a different channel too.
 def assign_group(db, new_text, new_embedding, channel, thread_ts=None):
     # 1️⃣ Same thread → same group
     if thread_ts:
-        return thread_ts
+        parent_ticket = db.query(Ticket).filter(Ticket.ts == thread_ts).first()
+        if parent_ticket:
+            return parent_ticket.group_id
 
     # 2️⃣ Compare to existing tickets in the same channel
     tickets = db.query(Ticket).filter(Ticket.channel == channel).all()
@@ -47,6 +52,14 @@ async def slack_events(request: Request):
     # Slack URL verification (important step)
     if "challenge" in body:
         return {"challenge": body["challenge"]}
+
+    # Prevent duplicate event processing
+    event_id = body.get("event_id")
+    if event_id in processed_events:
+        print(f"Duplicate event {event_id}, skipping...")
+        return {"ok": True}
+    
+    processed_events.add(event_id)
 
     # Example: print only message events
     event = body.get("event", {})
