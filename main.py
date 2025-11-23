@@ -8,8 +8,26 @@ from supabase import create_client
 import os
 from dotenv import load_dotenv
 import uuid
+from functools import lru_cache
+
 load_dotenv()
 app = FastAPI()
+
+from slack_sdk import WebClient
+
+slack_client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
+
+@lru_cache(maxsize=100)
+def get_slack_username(user_id: str) -> str:
+    """Fetch and cache Slack usernames for display."""
+    try:
+        resp = slack_client.users_info(user=user_id)
+        if resp["ok"]:
+            return resp["user"]["real_name"]
+    except Exception as e:
+        print("Error fetching username:", e)
+    return "Unknown User"
+
 # Store processed event IDs to prevent duplicates
 processed_events = set()
 
@@ -81,6 +99,10 @@ async def slack_events(request: Request):
     ts_str = event.get("ts", "")
     ts = datetime.fromtimestamp(float(ts_str)) if ts_str else datetime.utcnow()
     channel = event.get("channel", "")
+    user_id = event.get("user")
+
+    username = get_slack_username(user_id) if user_id else "Unknown User"
+    print(f"\n\n\nMessage from {username}: {text}")
     category, score = classify_message(text)
     print(f"\n\n\n\nClassified message as {category} with score {score}")
     if category != "irrelevant":
@@ -95,7 +117,8 @@ async def slack_events(request: Request):
             relevance_score=score,
             group_id=group_id,
             embedding=embedding,
-            ts=ts
+            ts=ts,
+            username=username
         )
         try:
             db.add(ticket)
@@ -107,7 +130,8 @@ async def slack_events(request: Request):
                 "channel": ticket.channel,
                 "type": ticket.type,
                 "relevance_score": ticket.relevance_score,
-                "group_id": ticket.group_id
+                "group_id": ticket.group_id,
+                "username": ticket.username
             }
         except Exception as e:
             print(f"Error saving ticket: {e}")

@@ -1,3 +1,4 @@
+// src/App.tsx
 import { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 
@@ -8,6 +9,7 @@ interface Ticket {
   type: string;
   relevance_score: number;
   group_id: string;
+  username?: string; // ✅ new field
   ts?: string;
 }
 
@@ -42,6 +44,7 @@ export default function App() {
     if (data) setTickets(data as Ticket[]);
   };
 
+  // Group tickets by group_id
   const groups: Record<string, Ticket[]> = tickets.reduce(
     (acc: Record<string, Ticket[]>, t: Ticket) => {
       if (!acc[t.group_id]) acc[t.group_id] = [];
@@ -51,6 +54,7 @@ export default function App() {
     {}
   );
 
+  // Sort by latest message (newest first)
   const sortedGroups = Object.entries(groups).sort((a, b) => {
     const latestA = new Date(a[1][a[1].length - 1].ts || "").getTime();
     const latestB = new Date(b[1][b[1].length - 1].ts || "").getTime();
@@ -124,30 +128,26 @@ export default function App() {
                     .filter(Boolean);
 
                   const stopwords = new Set([
-                    "oh", "ohh", "hmm", "huh", "okay", "ok", "yeah", "yup", "nope", "alright",
-                    "right", "sure", "hi", "hello", "thanks", "thank", "please", "cool", "great",
-                    "awesome", "nice", "well", "anyway", "hmm", "huh", "hmm", "yep", "no",
-                    "the", "a", "an", "is", "are", "was", "were", "be", "been", "to", "for",
-                    "on", "in", "of", "and", "or", "with", "we", "you", "i", "it", "need",
-                    "some", "help", "can", "should", "could", "would", "also", "just",
-                    "want", "like", "there", "this", "that", "again", "doesnt", "not",
-                    "from", "about", "have", "has", "had", "get", "got", "do", "did", "does"
+                    "oh","ohh","hmm","huh","okay","ok","yeah","yup","nope","alright",
+                    "right","sure","hi","hello","thanks","thank","please","cool","great",
+                    "awesome","nice","well","anyway","yep","no",
+                    "the","a","an","is","are","was","were","be","been","to","for",
+                    "on","in","of","and","or","with","we","you","i","it","need",
+                    "some","help","can","should","could","would","also","just",
+                    "want","like","there","this","that","again","doesnt","not",
+                    "from","about","have","has","had","get","got","do","did","does"
                   ]);
 
                   const filtered = words.filter(
                     (w) => w.length > 3 && !stopwords.has(w.toLowerCase())
                   );
 
-                  if (filtered[0] && stopwords.has(filtered[0].toLowerCase())) filtered.shift();
-
                   const technicalKeywords = filtered.filter((w) =>
                     /(api|login|backend|frontend|server|infra|infrastructure|database|export|timeout|crash|error|feature|support|deploy|button|mobile|auth|endpoint|integration|performance|latency|pipeline|cloud|aws|gcp|azure)/i.test(w)
                   );
 
                   const businessKeywords = filtered.filter((w) =>
-                    /(procurement|finance|invoice|vendor|compliance|sales|operations|payment|contract|report|approval|audit|budget|inventory|crm|erp|hr|human|resources|supply|chain|customer|billing|data|policy|dashboard|security|governance|accounting|marketing|analytics|legal)/i.test(
-                      w
-                    )
+                    /(procurement|finance|invoice|vendor|compliance|sales|operations|payment|contract|report|approval|audit|budget|inventory|crm|erp|hr|human|resources|supply|chain|customer|billing|data|policy|dashboard|security|governance|accounting|marketing|analytics|legal)/i.test(w)
                   );
 
                   const properNouns = words.filter(
@@ -211,9 +211,14 @@ export default function App() {
                                   className="bg-white border-2 border-gray-400 rounded-xl p-4 shadow-md hover:shadow-lg transition-shadow"
                                 >
                                   <div className="flex justify-between items-start gap-3 mb-2">
-                                    <span className="text-xs font-semibold text-gray-600 uppercase">
-                                      Message {idx + 1}
-                                    </span>
+                                    <div>
+                                      <span className="text-xs font-semibold text-gray-600 uppercase">
+                                        Message {idx + 1}
+                                      </span>
+                                      <p className="text-xs text-gray-500 italic">
+                                        Sent by: {m.username || "Unknown"}
+                                      </p>
+                                    </div>
                                     <span className="text-xs text-gray-500">
                                       {formatDate(m.ts)}
                                     </span>

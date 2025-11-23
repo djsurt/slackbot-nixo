@@ -14,3 +14,4 @@ class Ticket(Base):
     relevance_score = Column(Float)
     type = Column(String)  # bug, feature, support, question
     embedding = Column(JSON, nullable=True)
+    username = Column(String) 
