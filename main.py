@@ -31,16 +31,15 @@ def get_slack_username(user_id: str) -> str:
 # Store processed event IDs to prevent duplicates
 processed_events = set()
 
-#TODO: People might be talking about the same issue in a different channel too.
 def assign_group(db, new_text, new_embedding, ts, thread_ts=None):
-    # 1️⃣ Same thread → same group
+    # Same thread → same group
     if thread_ts:
         thread_dt = datetime.fromtimestamp(float(thread_ts))
         parent_ticket = db.query(Ticket).filter(Ticket.ts == thread_dt).first()
         if parent_ticket:
             return parent_ticket.group_id
 
-    # 2️⃣ Compare with all tickets (cross-channel)
+    # Compare with all tickets (cross-channel)
     tickets = db.query(Ticket).all()
     strong_similarity = 0.7
     weak_similarity = 0.5
@@ -63,7 +62,7 @@ def assign_group(db, new_text, new_embedding, ts, thread_ts=None):
     
     if best_match:
         return best_match.group_id
-    # 3️⃣ Otherwise, make new group
+    # Otherwise, make new group
     return str(uuid.uuid4())
 
 supabase = create_client(

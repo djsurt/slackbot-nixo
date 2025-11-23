@@ -3,7 +3,6 @@ from datetime import datetime
 from uuid import uuid4
 from database import Base
 
-#TODO: There's gotta be a better way to compare embeddings
 class Ticket(Base):
     __tablename__ = "tickets"
     id = Column(String, primary_key=True, default=lambda: str(uuid4()))
