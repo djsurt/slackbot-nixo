@@ -9,6 +9,9 @@ import os
 from dotenv import load_dotenv
 import uuid
 from functools import lru_cache
+import redis
+
+redis_client = redis.Redis(host='localhost', port=6379, decode_responses=True)
 
 load_dotenv()
 app = FastAPI()
@@ -16,6 +19,25 @@ app = FastAPI()
 from slack_sdk import WebClient
 
 slack_client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
+
+import redis
+
+# Initialize Redis client
+redis_client = redis.Redis(host="localhost", port=6379, decode_responses=True)
+
+def is_duplicate_event(event_id: str) -> bool:
+    key = f"slack_event:{event_id}"
+    try:
+        if redis_client.exists(key):
+            return True
+        # Store the event ID with a TTL (e.g., 24 hours)
+        redis_client.setex(key, 86400, "1")
+        return False
+    except Exception as e:
+        print(f"Redis Connection error: {e}")
+        #Fallbac to allow processing(or use another deduplication mechanism)
+        return False
+
 
 @lru_cache(maxsize=100)
 def get_slack_username(user_id: str) -> str:
@@ -28,8 +50,6 @@ def get_slack_username(user_id: str) -> str:
         print("Error fetching username:", e)
     return "Unknown User"
 
-# Store processed event IDs to prevent duplicates
-processed_events = set()
 
 def assign_group(db, new_text, new_embedding, ts, thread_ts=None):
     # Same thread → same group
@@ -87,12 +107,10 @@ async def slack_events(request: Request):
 
     # Prevent duplicate event processing
     event_id = body.get("event_id")
-    if event_id in processed_events:
+    if is_duplicate_event(event_id):
         print(f"Duplicate event {event_id}, skipping...")
         return {"ok": True}
     
-    processed_events.add(event_id)
-
     # Example: print only message events
     event = body.get("event", {})
     text = event.get("text", "")
