@@ -1,6 +1,8 @@
 // src/App.tsx
 import { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
+import Navbar from "./components/Navbar";
+import IssueCard from "./components/IssueCard";
 
 interface Ticket {
   id: string;
@@ -81,46 +83,26 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen" style={{ backgroundColor: '#FAF9F6' }}>
       {/* Header */}
-      <div className="border-b border-gray-200 sticky top-0 z-50 bg-white">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-semibold text-gray-900">FDE Slackbot</h1>
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span>{sortedGroups.length} Issues</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      <Navbar title="FDE Slackbot" activeIssuesCount={sortedGroups.length} />
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      <div className="max-w-7xl mx-auto px-8 py-8">
         {sortedGroups.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-gray-500">
-              No issues yet — waiting for messages from Slack...
-            </p>
+          <div className="text-center py-24">
+            <div className="max-w-md mx-auto">
+              <p className="text-lg text-slate-600 font-medium">
+                No issues yet — waiting for messages from Slack
+              </p>
+              <p className="text-sm text-slate-500 mt-2">
+                Your dashboard will populate automatically
+              </p>
+            </div>
           </div>
         ) : (
-          <div className="border border-gray-300 rounded-xl overflow-hidden divide-y-4 divide-gray-300">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b-2 border-gray-300 bg-gray-50">
-                  <th className="text-left px-6 py-3 text-sm font-semibold text-gray-700 uppercase tracking-wide">
-                    Issue
-                  </th>
-                  <th className="text-left px-6 py-3 text-sm font-semibold text-gray-700 uppercase tracking-wide">
-                    Messages
-                  </th>
-                  <th className="text-left px-6 py-3 text-sm font-semibold text-gray-700 uppercase tracking-wide">
-                    Updated
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedGroups.map(([groupId, msgs]) => {
+          <div className="space-y-4">
+            {sortedGroups.map(([groupId, msgs]) => {
                   const firstMsgRaw = msgs[0].text;
                   const words = firstMsgRaw
                     .replace(/[^\w\s]/g, "")
@@ -170,77 +152,20 @@ export default function App() {
                   issueTitle =
                     issueTitle.charAt(0).toUpperCase() + issueTitle.slice(1);
 
-                  const groupTime = formatDate(msgs[msgs.length - 1].ts);
                   const isExpanded = expandedGroups.has(groupId);
 
                   return (
-                    <>
-                      <tr
-                        key={groupId}
-                        className="border-t-4 border-gray-300 hover:bg-gray-100 cursor-pointer transition-colors"
-                        onClick={() => toggleGroup(groupId)}
-                      >
-                        <td className="px-6 py-4 text-base text-gray-900 font-bold tracking-wide">
-                          {issueTitle || "General inquiry"}
-                          <p className="text-xs text-gray-500 truncate mt-1 italic">
-                            “{msgs[0].text.slice(0, 60)}...”
-                          </p>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-600">{msgs.length}</td>
-                        <td className="px-6 py-4 text-sm text-gray-600">{groupTime}</td>
-                      </tr>
-
-                      {isExpanded && (
-                        <tr className="bg-gray-50 animate-fadeIn">
-                          <td colSpan={3} className="px-6 py-5">
-                            <div className="space-y-4">
-                              <h3 className="text-sm font-semibold text-blue-600 mb-2">
-                                Issue context: {issueTitle}
-                              </h3>
-                              <div className="border-l-4 border-blue-200 pl-4 text-gray-600 text-sm italic">
-                                "{msgs[0].text}"
-                              </div>
-
-                              <div className="text-xs font-semibold text-gray-700 uppercase tracking-wider mt-4">
-                                Messages
-                              </div>
-
-                              {msgs.map((m, idx) => (
-                                <div
-                                  key={m.id}
-                                  className="bg-white border-2 border-gray-400 rounded-xl p-4 shadow-md hover:shadow-lg transition-shadow"
-                                >
-                                  <div className="flex justify-between items-start gap-3 mb-2">
-                                    <div>
-                                      <span className="text-xs font-semibold text-gray-600 uppercase">
-                                        Message {idx + 1}
-                                      </span>
-                                      <p className="text-xs text-gray-500 italic">
-                                        Sent by: {m.username || "Unknown"}
-                                      </p>
-                                    </div>
-                                    <span className="text-xs text-gray-500">
-                                      {formatDate(m.ts)}
-                                    </span>
-                                  </div>
-                                  <p className="text-sm text-gray-800 mb-2">{m.text}</p>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs text-gray-500">Channel:</span>
-                                    <code className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-700">
-                                      {m.channel}
-                                    </code>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </>
+                    <IssueCard
+                      key={groupId}
+                      groupId={groupId}
+                      issueTitle={issueTitle}
+                      messages={msgs}
+                      isExpanded={isExpanded}
+                      onToggle={() => toggleGroup(groupId)}
+                      formatDate={formatDate}
+                    />
                   );
-                })}
-              </tbody>
-            </table>
+            })}
           </div>
         )}
       </div>
