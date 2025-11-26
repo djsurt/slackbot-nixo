@@ -25,6 +25,7 @@ const IssueCard: React.FC<IssueCardProps> = ({
   formatDate,
 }) => {
   const groupTime = formatDate(messages[messages.length - 1].ts);
+  const latestMessage = messages[messages.length - 1];
 
   return (
     <div className="rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 hover:-translate-y-1" style={{ backgroundColor: '#FFFFFF', border: '1px solid #E8D5C4' }}>
@@ -41,7 +42,7 @@ const IssueCard: React.FC<IssueCardProps> = ({
                 {issueTitle || "General inquiry"}
               </h3>
               <p className="text-sm line-clamp-2" style={{ color: '#6B6B6B' }}>
-                {messages[0].text}
+                {latestMessage.text}
               </p>
               <div className="flex items-center gap-4 mt-3">
                 <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: '#FFE8DC', color: '#D4684F', border: '1px solid #E8C4B0' }}>
@@ -81,10 +82,10 @@ const IssueCard: React.FC<IssueCardProps> = ({
             <div className="mb-6">
               <h4 className="text-sm font-bold mb-3 flex items-center gap-2" style={{ color: '#3D405B' }}>
                 <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#E07A5F' }}></span>
-                Issue Context
+                Latest Update
               </h4>
               <div className="pl-4 py-3 bg-white rounded-r-lg shadow-sm" style={{ borderLeft: '4px solid #E07A5F' }}>
-                <p className="text-sm leading-relaxed" style={{ color: '#4A4A4A' }}>{messages[0].text}</p>
+                <p className="text-sm leading-relaxed" style={{ color: '#4A4A4A' }}>{latestMessage.text}</p>
               </div>
             </div>
 

@@ -11,7 +11,8 @@ interface Ticket {
   type: string;
   relevance_score: number;
   group_id: string;
-  username?: string; // ✅ new field
+  group_title?: string; // Add this
+  username?: string;
   ts?: string;
 }
 
@@ -79,11 +80,12 @@ export default function App() {
       hour: "2-digit",
       minute: "2-digit",
       hour12: true,
+      timeZone: "America/Los_Angeles",
     });
   };
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#FAF9F6' }}>
+    <div className="min-h-screen" style={{ backgroundColor: "#FAF9F6" }}>
       {/* Header */}
       <Navbar title="FDE Slackbot" activeIssuesCount={sortedGroups.length} />
 
@@ -103,68 +105,21 @@ export default function App() {
         ) : (
           <div className="space-y-4">
             {sortedGroups.map(([groupId, msgs]) => {
-                  const firstMsgRaw = msgs[0].text;
-                  const words = firstMsgRaw
-                    .replace(/[^\w\s]/g, "")
-                    .split(/\s+/)
-                    .filter(Boolean);
+              // Use GPT-generated title or fallback
+              const issueTitle = msgs[0].group_title || msgs[0].text.slice(0, 60);
+              const isExpanded = expandedGroups.has(groupId);
 
-                  const stopwords = new Set([
-                    "oh","ohh","hmm","huh","okay","ok","yeah","yup","nope","alright",
-                    "right","sure","hi","hello","thanks","thank","please","cool","great",
-                    "awesome","nice","well","anyway","yep","no",
-                    "the","a","an","is","are","was","were","be","been","to","for",
-                    "on","in","of","and","or","with","we","you","i","it","need",
-                    "some","help","can","should","could","would","also","just",
-                    "want","like","there","this","that","again","doesnt","not",
-                    "from","about","have","has","had","get","got","do","did","does"
-                  ]);
-
-                  const filtered = words.filter(
-                    (w) => w.length > 3 && !stopwords.has(w.toLowerCase())
-                  );
-
-                  const technicalKeywords = filtered.filter((w) =>
-                    /(api|login|backend|frontend|server|infra|infrastructure|database|export|timeout|crash|error|feature|support|deploy|button|mobile|auth|endpoint|integration|performance|latency|pipeline|cloud|aws|gcp|azure)/i.test(w)
-                  );
-
-                  const businessKeywords = filtered.filter((w) =>
-                    /(procurement|finance|invoice|vendor|compliance|sales|operations|payment|contract|report|approval|audit|budget|inventory|crm|erp|hr|human|resources|supply|chain|customer|billing|data|policy|dashboard|security|governance|accounting|marketing|analytics|legal)/i.test(w)
-                  );
-
-                  const properNouns = words.filter(
-                    (w) => /^[A-Z]/.test(w) && !stopwords.has(w.toLowerCase())
-                  );
-
-                  const combined = Array.from(
-                    new Set([...properNouns, ...businessKeywords, ...technicalKeywords])
-                  );
-
-                  let issueTitle = "";
-                  if (combined.length > 0) {
-                    issueTitle = combined.slice(0, 4).join(" ");
-                  } else if (filtered.length > 0) {
-                    issueTitle = filtered.slice(0, 3).join(" ");
-                  } else {
-                    issueTitle = firstMsgRaw.slice(0, 60);
-                  }
-
-                  issueTitle =
-                    issueTitle.charAt(0).toUpperCase() + issueTitle.slice(1);
-
-                  const isExpanded = expandedGroups.has(groupId);
-
-                  return (
-                    <IssueCard
-                      key={groupId}
-                      groupId={groupId}
-                      issueTitle={issueTitle}
-                      messages={msgs}
-                      isExpanded={isExpanded}
-                      onToggle={() => toggleGroup(groupId)}
-                      formatDate={formatDate}
-                    />
-                  );
+              return (
+                <IssueCard
+                  key={groupId}
+                  groupId={groupId}
+                  issueTitle={issueTitle}
+                  messages={msgs}
+                  isExpanded={isExpanded}
+                  onToggle={() => toggleGroup(groupId)}
+                  formatDate={formatDate}
+                />
+              );
             })}
           </div>
         )}

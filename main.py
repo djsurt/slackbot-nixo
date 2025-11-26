@@ -1,29 +1,53 @@
 from fastapi import FastAPI, Request
 from utils import classify_message
-from models import Ticket
-from database import SessionLocal, engine, Base
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from embeddings import get_embedding, cosine_similarity
 from supabase import create_client
 import os
 from dotenv import load_dotenv
+from openai import OpenAI
 import uuid
 from functools import lru_cache
+from slack_sdk import WebClient
 import redis
-
-redis_client = redis.Redis(host='localhost', port=6379, decode_responses=True)
 
 load_dotenv()
 app = FastAPI()
 
-from slack_sdk import WebClient
 
+redis_client = redis.Redis(host='localhost', port=6379, decode_responses=True)
 slack_client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
+openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+supabase = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
+)
 
-import redis
-
-# Initialize Redis client
-redis_client = redis.Redis(host="localhost", port=6379, decode_responses=True)
+def generate_issue_title(message_text: str) -> str:
+    """Generate a concise, descriptive title for an issue using GPT."""
+    try:
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant that creates concise, descriptive titles (3-5 words) for support issues. The title should capture the main problem or topic. Return only the title, nothing else."
+                },
+                {
+                    "role": "user",
+                    "content": f"Create a short, descriptive title for this issue: {message_text}"
+                }
+            ],
+            temperature=0.7,
+            max_tokens=20
+        )
+        title = response.choices[0].message.content.strip()
+        title = title.strip('"').strip("'")
+        return title
+    except Exception as e:
+        print(f"Error generating title with GPT: {e}")
+        words = message_text.split()[:3]
+        return " ".join(words).capitalize()
 
 def is_duplicate_event(event_id: str) -> bool:
     key = f"slack_event:{event_id}"
@@ -51,51 +75,47 @@ def get_slack_username(user_id: str) -> str:
     return "Unknown User"
 
 
-def assign_group(db, new_text, new_embedding, ts, thread_ts=None):
+def assign_group(new_text, new_embedding, ts, thread_ts=None):
+    """Assign a group_id to a message using Supabase queries."""
     # Same thread → same group
     if thread_ts:
-        thread_dt = datetime.fromtimestamp(float(thread_ts))
-        parent_ticket = db.query(Ticket).filter(Ticket.ts == thread_dt).first()
-        if parent_ticket:
-            return parent_ticket.group_id
+        thread_dt = datetime.fromtimestamp(float(thread_ts)).isoformat()
+        result = supabase.table("tickets").select("group_id, group_title").eq("ts", thread_dt).limit(1).execute()
+        if result.data and len(result.data) > 0:
+            return result.data[0]["group_id"], False, result.data[0].get("group_title")
 
-    # Compare with all tickets (cross-channel)
-    tickets = db.query(Ticket).all()
+    # Fetch all tickets from Supabase
+    result = supabase.table("tickets").select("*").execute()
+    tickets = result.data
+    
     strong_similarity = 0.7
-    weak_similarity = 0.5
-    time_threshold = timedelta(minutes=15)
+    time_similarity = 0.4
+    time_threshold = timedelta(minutes=2)
 
     best_match = None
     best_score = 0
 
-    for t in tickets:
-        if not t.embedding:
+    for ticket in tickets:
+        if not ticket.get("embedding"):
             continue
-        sim = cosine_similarity(new_embedding, t.embedding)
-        time_diff = abs((ts - t.ts).total_seconds())
-        # Word similarity
+        
+        sim = cosine_similarity(new_embedding, ticket["embedding"])
+        ticket_ts = datetime.fromisoformat(ticket["ts"].replace("Z", "")).replace(tzinfo=None)
+        time_diff = abs((ts - ticket_ts).total_seconds())
+        
+        # High similarity - group regardless of time
         if sim >= strong_similarity and sim > best_score:
-            best_match, best_score = t, sim
-        # Time based similarity
-        elif sim >= weak_similarity and time_diff < time_threshold.total_seconds() and sim > best_score:
-            best_match, best_score = t, sim
+            best_match, best_score = ticket, sim
+        # Within time window (1-2 minutes) and has some similarity
+        elif time_diff <= time_threshold.total_seconds() and sim >= time_similarity and sim > best_score:
+            best_match, best_score = ticket, sim
     
     if best_match:
-        return best_match.group_id
-    # Otherwise, make new group
-    return str(uuid.uuid4())
+        return best_match["group_id"], False, best_match.get("group_title")
+    
+    # New group
+    return str(uuid.uuid4()), True, None
 
-supabase = create_client(
-    os.getenv("SUPABASE_URL"),
-    os.getenv("SUPABASE_SERVICE_KEY")
-)
-
-
-def save_ticket_to_supabase(ticket_data):
-    supabase.table("tickets").insert(ticket_data).execute()
-    print(f"Saved ticket {ticket_data['id']} to Supabase.")
-
-Base.metadata.create_all(bind=engine)
 @app.post("/slack/events")
 async def slack_events(request: Request):
     body = await request.json()
@@ -115,7 +135,8 @@ async def slack_events(request: Request):
     event = body.get("event", {})
     text = event.get("text", "")
     ts_str = event.get("ts", "")
-    ts = datetime.fromtimestamp(float(ts_str)) if ts_str else datetime.utcnow()
+    # Slack timestamps are in UTC, convert to UTC datetime
+    ts = datetime.fromtimestamp(float(ts_str), tz=timezone.utc).replace(tzinfo=None) if ts_str else datetime.utcnow()
     channel = event.get("channel", "")
     user_id = event.get("user")
 
@@ -124,40 +145,37 @@ async def slack_events(request: Request):
     category, score = classify_message(text)
     print(f"\n\n\n\nClassified message as {category} with score {score}")
     if category != "irrelevant":
-        db = SessionLocal()
         embedding = get_embedding(text)
         print(f"\n\n\nGenerated embedding of length {len(embedding)}")
-        group_id = assign_group(db, text, embedding, ts, event.get("thread_ts"))
-        ticket = Ticket(
-            text=text,
-            channel=channel,
-            type=category,
-            relevance_score=score,
-            group_id=group_id,
-            embedding=embedding,
-            ts=ts,
-            username=username
-        )
+        
+        group_id, is_new_group, existing_title = assign_group(text, embedding, ts, event.get("thread_ts"))
+        
+        # Generate title for new groups
+        group_title = existing_title
+        if is_new_group:
+            print(f"\n\n\nNew group detected, generating title with GPT...")
+            group_title = generate_issue_title(text)
+            print(f"Generated title: {group_title}")
+        
+        # Create ticket data
+        ticket_data = {
+            "id": str(uuid.uuid4()),
+            "text": text,
+            "channel": channel,
+            "type": category,
+            "relevance_score": score,
+            "group_id": group_id,
+            "group_title": group_title,
+            "embedding": embedding,
+            "ts": ts.isoformat(),
+            "username": username
+        }
+        
         try:
-            db.add(ticket)
-            db.commit()
-            # Create a dictionary with ticket data before closing the session
-            ticket_data = {
-                "id": ticket.id,
-                "text": ticket.text,
-                "channel": ticket.channel,
-                "type": ticket.type,
-                "relevance_score": ticket.relevance_score,
-                "group_id": ticket.group_id,
-                "username": ticket.username
-            }
+            # Save directly to Supabase
+            supabase.table("tickets").insert(ticket_data).execute()
+            print(f"Saved ticket {ticket_data['id']} to Supabase.")
         except Exception as e:
             print(f"Error saving ticket: {e}")
-            db.rollback()
-            ticket_data = None
-        finally:
-            db.close()
-        
-        if ticket_data:
-            save_ticket_to_supabase(ticket_data)
+
     return {"ok": True}
